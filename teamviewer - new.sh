@@ -7,10 +7,9 @@ TEAMVIEWER_DEB_URL="https://download.teamviewer.com/download/linux/teamviewer_am
 TEAMVIEWER_DEB_FILENAME="teamviewer_amd64.deb"
 TEMP_DIR="/tmp/teamviewer_installer"
 
-# Substitua "SEU_TOKEN_DE_ATRIBUICAO_AQUI" pelo seu token real do TeamViewer Management Console.
-TEAMVIEWER_ASSIGNMENT_TOKEN="SEU_TOKEN_DE_ATRIBUICAO_AQUI" # <<<<< PREENCHA AQUI SEU TOKEN REAL
-DEVICE_ALIAS=$(hostname)
-TEAMVIEWER_GROUP="ManagedByIntune" # <<<<< PREENCHA AQUI O NOME DO GRUPO NO TEAMVIEWER (ou use um padrão)
+# As variáveis de token e grupo foram removidas, pois a funcionalidade de atribuição será manual.
+# No entanto, se você quiser manter as variáveis no script (mesmo que não sejam usadas), pode deixá-las.
+# Por clareza, estou removendo-as, mas se precisar delas para documentação, avise.
 
 # --- ADVERTÊNCIA CRÍTICA E FUNDAMENTAL (MANTIDA) ---
 # ESTE SCRIPT NÃO RESOLVERÁ O ERRO "Remote script execution requires user consent".
@@ -73,7 +72,7 @@ echo "INFO: Verificando e iniciando o serviço TeamViewer..."
 sudo /usr/bin/systemctl daemon-reload
 sudo /usr/bin/systemctl enable teamviewerd
 
-# NOVO: Reiniciar o daemon para garantir um estado limpo, e esperar por ele.
+# Reiniciar o daemon para garantir um estado limpo, e esperar por ele.
 echo "INFO: Parando e iniciando o daemon do TeamViewer para garantir um estado limpo..."
 sudo /usr/bin/systemctl stop teamviewerd || true # Permite que falhe se não estiver rodando
 sleep 3 # Pequena pausa antes de iniciar
@@ -87,56 +86,23 @@ SERVICE_READY=false
 
 while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
     echo "INFO: Verificando se o daemon do TeamViewer está pronto (Tentativa $((RETRY_COUNT+1))/$MAX_RETRIES)..."
-    # O comando 'teamviewer info' é uma boa forma de verificar se o daemon está responsivo
-    # Capturar stderr também para ver mais detalhes
     OUTPUT=$(sudo /usr/bin/teamviewer info 2>&1)
-    echo "DEBUG: Output de 'teamviewer info': $OUTPUT" # Adicionar este debug
+    echo "DEBUG: Output de 'teamviewer info': $OUTPUT"
     echo "$OUTPUT" | grep -q "TeamViewer ID:" && SERVICE_READY=true && break
     sleep "$WAIT_TIME"
     RETRY_COUNT=$((RETRY_COUNT+1))
 done
 
 if [ "$SERVICE_READY" = true ]; then
-    echo "INFO: Daemon do TeamViewer está pronto e rodando para configuração."
+    echo "INFO: Daemon do TeamViewer está pronto e rodando."
 else
     echo "ERRO: O daemon do TeamViewer não iniciou ou não respondeu após múltiplas tentativas. Verifique 'sudo systemctl status teamviewerd' manualmente e o log completo do TeamViewer."
     sudo /usr/bin/systemctl status teamviewerd # Exibir o status completo para depuração
     rm -rf "$TEMP_DIR"; exit 1 # Sair com erro se o daemon não estiver pronto para configuração
 fi
 
-
-# 6. Configurar política de acesso para visualização remota (Full Access)
-echo "INFO: Configurando política de acesso para visualização remota (FullAccess)..."
-# Tentar executar o comando e capturar explicitamente seu stderr
-SETUP_CONFIG_OUTPUT=$(sudo /usr/bin/teamviewer setup config default Policy.IncomingConnectionPolicy "FullAccess" 2>&1)
-EXIT_STATUS=$? # Captura o status de saída do comando
-echo "DEBUG: Output de 'teamviewer setup config': $SETUP_CONFIG_OUTPUT" # Adicionar este debug
-
-if [ "$EXIT_STATUS" -ne 0 ]; then
-    echo "ERRO: O comando de configuração de política do TeamViewer falhou. Saída do comando: $SETUP_CONFIG_OUTPUT"
-    echo "Possíveis causas: Daemon não totalmente pronto, problema de permissão mais complexo, ou bug no próprio TeamViewer."
-    rm -rf "$TEMP_DIR"; exit 1
-fi
-echo "INFO: Política de acesso configurada com sucesso."
-
-
-# 7. Atribuir o TeamViewer à sua conta (usando o token)
-if [ -n "$TEAMVIEWER_ASSIGNMENT_TOKEN" ] && [ "$TEAMVIEWER_ASSIGNMENT_TOKEN" != "SEU_TOKEN_DE_ATRIBUICAO_AQUI" ]; then
-    echo "INFO: Atribuindo o TeamViewer à sua conta usando o token..."
-    ASSIGN_OUTPUT=$(sudo /usr/bin/teamviewer setup assign --alias "$DEVICE_ALIAS" --group "$TEAMVIEWER_GROUP" --grant-easy-access --token "$TEAMVIEWER_ASSIGNMENT_TOKEN" 2>&1)
-    ASSIGN_STATUS=$?
-    echo "DEBUG: Output de 'teamviewer setup assign': $ASSIGN_OUTPUT" # Adicionar este debug
-
-    if [ "$ASSIGN_STATUS" -ne 0 ]; then
-        echo "AVISO: Falha ao atribuir o TeamViewer. Saída do comando: $ASSIGN_OUTPUT"
-        echo "Verifique o token, os nomes de grupo/alias no TeamViewer Management Console e as configurações de licença."
-        # Não sair aqui, pois a instalação base já foi bem-sucedida, apenas a atribuição falhou.
-    else
-        echo "INFO: TeamViewer atribuído com sucesso à sua conta."
-    fi
-else
-    echo "AVISO: Nenhum token de atribuição válido fornecido ou o token padrão 'SEU_TOKEN_DE_ATRIBUICAO_AQUI' não foi substituído. Pulando a atribuição automática."
-fi
+# As seções 6 e 7 (Configuração da Política e Atribuição) foram removidas daqui.
+# Elas precisarão ser configuradas manualmente no dispositivo após a instalação.
 
 # 8. Limpar arquivos temporários
 echo "INFO: Limpando arquivos temporários em $TEMP_DIR..."
@@ -144,7 +110,7 @@ rm -rf "$TEMP_DIR" || echo "AVISO: Falha ao remover o diretório temporário $TE
 
 echo "--- Instalação do TeamViewer concluída! ---"
 echo "Data e Hora de término: $(date)"
-echo "O TeamViewer foi instalado, o serviço iniciado, visualização remota liberada e o dispositivo atribuído à sua conta (se o token foi fornecido)."
+echo "O TeamViewer foi instalado e o serviço iniciado. A configuração de acesso e a atribuição podem ser feitas manualmente pelo aplicativo."
 echo "Lembre-se de verificar firewalls locais/de rede (portas 5938, 80, 443) e o status no console do TeamViewer."
 
 exit 0
