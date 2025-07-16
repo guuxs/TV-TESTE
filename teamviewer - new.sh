@@ -3,22 +3,12 @@ set -e  # Sair imediatamente se um comando falhar
 set -x  # Imprimir comandos e argumentos à medida que são executados (útil para depuração)
 
 # --- Configurações ---
-# URL para download do pacote TeamViewer .deb
-# SEMPRE verifique a URL mais recente no site oficial do TeamViewer para garantir que está baixando a versão correta.
 TEAMVIEWER_DEB_URL="https://download.teamviewer.com/download/linux/teamviewer_amd64.deb"
-
-# Nome do arquivo que será salvo após o download
 TEAMVIEWER_DEB_FILENAME="teamviewer_amd64.deb"
-
-# Diretório temporário para download e instalação
 TEMP_DIR="/tmp/teamviewer_installer"
-
-# Seu Token de Atribuição do TeamViewer
-# Substitua "SEU_TOKEN_DE_ATRIBUICAO_AQUI" pelo seu token real do TeamViewer Management Console.
 TEAMVIEWER_ASSIGNMENT_TOKEN="SEU_TOKEN_DE_ATRIBUICAO_AQUI" # <<<<< PREENCHA AQUI SEU TOKEN REAL
-DEVICE_ALIAS=$(hostname) # Pode ser ajustado para um nome fixo se preferir
+DEVICE_ALIAS=$(hostname)
 TEAMVIEWER_GROUP="ManagedByIntune" # <<<<< PREENCHA AQUI O NOME DO GRUPO NO TEAMVIEWER (ou use um padrão)
-
 
 # --- ADVERTÊNCIA CRÍTICA E FUNDAMENTAL (MANTIDA) ---
 # ESTE SCRIPT NÃO RESOLVERÁ O ERRO "Remote script execution requires user consent".
@@ -30,7 +20,6 @@ TEAMVIEWER_GROUP="ManagedByIntune" # <<<<< PREENCHA AQUI O NOME DO GRUPO NO TEAM
 # A única solução provável é através do suporte da Microsoft.
 # --- FIM DA ADVERTÊNCIA CRÍTICA ---
 
-
 echo "--- Iniciando a instalação automatizada do TeamViewer no Ubuntu (wget + dpkg) ---"
 echo "Data e Hora de início: $(date)"
 echo "Host: $(hostname)"
@@ -39,54 +28,27 @@ echo "ID do Usuário de execução: $(id -u)"
 
 # NOVO: Tentar corrigir o dpkg primeiro se estiver em estado "quebrado"
 echo "INFO: Tentando corrigir o estado do dpkg..."
-sudo /usr/bin/dpkg --configure -a
-if [ $? -ne 0 ]; then
-    echo "AVISO: O comando 'dpkg --configure -a' retornou um erro. Isso pode indicar um problema persistente no sistema de pacotes."
-    # Não vamos sair aqui, pois talvez as próximas etapas de apt consigam corrigir
-fi
+sudo /usr/bin/dpkg --configure -a || echo "AVISO: O comando 'dpkg --configure -a' retornou um erro, mas continuamos."
 echo "INFO: Tentativa de correção do dpkg concluída."
-
 
 # 1. Criar e navegar para o diretório temporário
 echo "INFO: Criando diretório temporário: $TEMP_DIR"
-mkdir -p "$TEMP_DIR"
-if [ $? -ne 0 ]; then
-    echo "ERRO: Não foi possível criar o diretório temporário $TEMP_DIR. Verifique as permissões."
-    exit 1
-fi
-cd "$TEMP_DIR"
-if [ $? -ne 0 ]; then
-    echo "ERRO: Não foi possível mudar para o diretório $TEMP_DIR. Saindo."
-    exit 1
-fi
+mkdir -p "$TEMP_DIR" || { echo "ERRO: Não foi possível criar o diretório temporário $TEMP_DIR. Verifique as permissões."; exit 1; }
+cd "$TEMP_DIR" || { echo "ERRO: Não foi possível mudar para o diretório $TEMP_DIR. Saindo."; exit 1; }
 echo "INFO: Diretório temporário criado e navegado com sucesso."
 
 # 2. Baixar o pacote TeamViewer .deb
 echo "INFO: Baixando o pacote TeamViewer de: $TEAMVIEWER_DEB_URL"
-wget -q "$TEAMVIEWER_DEB_URL" -O "$TEAMVIEWER_DEB_FILENAME"
-if [ $? -ne 0 ]; then
-    echo "ERRO: Falha ao baixar o pacote TeamViewer. Verifique a URL e a conexão com a internet."
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
+wget -q "$TEAMVIEWER_DEB_URL" -O "$TEAMVIEWER_DEB_FILENAME" || { echo "ERRO: Falha ao baixar o pacote TeamViewer. Verifique a URL e a conexão com a internet."; rm -rf "$TEMP_DIR"; exit 1; }
 echo "INFO: Download do pacote TeamViewer concluído."
 ls -lh "$TEAMVIEWER_DEB_FILENAME"
 
 # 3. Atualizar lista de pacotes e instalar dependências antes de instalar o .deb
 echo "INFO: Atualizando a lista de pacotes e instalando dependências necessárias..."
-sudo /usr/bin/apt update -y
-if [ $? -ne 0 ]; then
-    echo "ERRO: Falha ao atualizar a lista de pacotes. Verifique sua conexão com a internet."
-    rm -rf "$TEMP_DIR"; exit 1
-fi
+sudo /usr/bin/apt update -y || { echo "ERRO: Falha ao atualizar a lista de pacotes. Verifique sua conexão com a internet."; rm -rf "$TEMP_DIR"; exit 1; }
 
-# Instalar as dependências que o dpkg reclamou
 echo "INFO: Instalando dependências: libminizip1 libxcb-xinerama0..."
-sudo /usr/bin/apt install -y libminizip1 libxcb-xinerama0
-if [ $? -ne 0 ]; then
-    echo "ERRO: Falha ao instalar as dependências. Isso pode causar a falha da instalação do TeamViewer."
-    # Não vamos sair aqui, pois o dpkg -i pode ainda tentar puxar com --fix-broken, mas é um aviso sério
-fi
+sudo /usr/bin/apt install -y libminizip1 libxcb-xinerama0 || echo "AVISO: Falha ao instalar algumas dependências. Isso pode ser um problema."
 
 
 # 4. Instalar o TeamViewer usando dpkg e resolver dependências (se ainda houver)
@@ -95,18 +57,10 @@ sudo /usr/bin/dpkg -i "./$TEAMVIEWER_DEB_FILENAME"
 
 if [ $? -ne 0 ]; then
     echo "AVISO: Instalação dpkg falhou (ainda). Tentando corrigir dependências com apt --fix-broken install..."
-    sudo /usr/bin/apt --fix-broken install -y
-    if [ $? -ne 0 ]; then
-        echo "ERRO FATAL: Falha ao corrigir dependências após tentativa de instalação. O TeamViewer não pode ser configurado."
-        rm -rf "$TEMP_DIR"; exit 1
-    fi
-    # Tenta instalar novamente após o fix-broken, caso o primeiro dpkg -i falhe e o fix-broken resolva
+    sudo /usr/bin/apt --fix-broken install -y || { echo "ERRO FATAL: Falha ao corrigir dependências após tentativa de instalação. O TeamViewer não pode ser configurado."; rm -rf "$TEMP_DIR"; exit 1; }
+    
     echo "INFO: Dependências corrigidas. Tentando instalar TeamViewer novamente para configurar..."
-    sudo /usr/bin/dpkg -i "./$TEAMVIEWER_DEB_FILENAME"
-    if [ $? -ne 0 ]; then
-        echo "ERRO FATAL: Instalação do TeamViewer falhou mesmo após correção de dependências."
-        rm -rf "$TEMP_DIR"; exit 1
-    fi
+    sudo /usr/bin/dpkg -i "./$TEAMVIEWER_DEB_FILENAME" || { echo "ERRO FATAL: Instalação do TeamViewer falhou mesmo após correção de dependências."; rm -rf "$TEMP_DIR"; exit 1; }
 fi
 echo "INFO: Instalação do TeamViewer e resolução de dependências concluída com sucesso."
 
@@ -116,21 +70,36 @@ echo "INFO: Verificando e iniciando o serviço TeamViewer..."
 sudo /usr/bin/systemctl daemon-reload
 sudo /usr/bin/systemctl enable teamviewerd
 sudo /usr/bin/systemctl start teamviewerd
-sleep 3 # Dar um tempo menor para o serviço iniciar
-SERVICE_STATUS=$(sudo /usr/bin/systemctl is-active teamviewerd)
-if [ "$SERVICE_STATUS" == "active" ]; then
-    echo "INFO: Serviço TeamViewer está ativo (running)."
+
+# NOVO: Loop de espera para o daemon TeamViewer estar realmente pronto
+MAX_RETRIES=10 # Tentar 10 vezes
+WAIT_TIME=5    # Esperar 5 segundos entre as tentativas
+RETRY_COUNT=0
+SERVICE_READY=false
+
+while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+    echo "INFO: Verificando se o daemon do TeamViewer está pronto (Tentativa $((RETRY_COUNT+1))/$MAX_RETRIES)..."
+    # O comando 'teamviewer status' é uma boa forma de verificar se o daemon está responsivo
+    sudo /usr/bin/teamviewer status | grep -q "TeamViewer daemon is running." && SERVICE_READY=true && break
+    sleep "$WAIT_TIME"
+    RETRY_COUNT=$((RETRY_COUNT+1))
+done
+
+if [ "$SERVICE_READY" = true ]; then
+    echo "INFO: Daemon do TeamViewer está pronto e rodando."
 else
-    echo "AVISO: Serviço TeamViewer não parece estar ativo. Status: $SERVICE_STATUS"
+    echo "ERRO: O daemon do TeamViewer não iniciou ou não respondeu após múltiplas tentativas. Verifique 'sudo systemctl status teamviewerd' manualmente."
     sudo /usr/bin/systemctl status teamviewerd # Exibir o status completo para depuração
+    rm -rf "$TEMP_DIR"; exit 1 # Sair com erro se o daemon não estiver pronto para configuração
 fi
 
 
 # 6. Configurar política de acesso para visualização remota (Full Access)
 echo "INFO: Configurando política de acesso para visualização remota (FullAccess)..."
-sudo /usr/bin/teamviewer setup config default Policy.IncomingConnectionPolicy "FullAccess"
-if [ $? -ne 0 ]; then
-    echo "AVISO: Falha ao configurar a política de acesso do TeamViewer. Isso pode ser um problema se o TeamViewer não estiver totalmente configurado."
+sudo /usr/bin/teamviewer setup config default Policy.IncomingConnectionPolicy "FullAccess" || echo "AVISO: Falha ao configurar a política de acesso do TeamViewer. O TeamViewer pode precisar de configuração manual."
+if [ $? -ne 0 ]; then # Verificar explicitamente o status do comando
+    echo "ERRO: O comando de configuração de política do TeamViewer falhou. Saindo."
+    rm -rf "$TEMP_DIR"; exit 1
 fi
 
 
@@ -140,6 +109,7 @@ if [ -n "$TEAMVIEWER_ASSIGNMENT_TOKEN" ] && [ "$TEAMVIEWER_ASSIGNMENT_TOKEN" != 
     sudo /usr/bin/teamviewer setup assign --alias "$DEVICE_ALIAS" --group "$TEAMVIEWER_GROUP" --grant-easy-access --token "$TEAMVIEWER_ASSIGNMENT_TOKEN"
     if [ $? -ne 0 ]; then
         echo "AVISO: Falha ao atribuir o TeamViewer. Verifique o token e os nomes de grupo/alias no TeamViewer Management Console."
+        # Não sair aqui, pois a instalação base já foi bem-sucedida, apenas a atribuição falhou.
     else
         echo "INFO: TeamViewer atribuído com sucesso à sua conta."
     fi
@@ -149,10 +119,7 @@ fi
 
 # 8. Limpar arquivos temporários
 echo "INFO: Limpando arquivos temporários em $TEMP_DIR..."
-rm -rf "$TEMP_DIR"
-if [ $? -ne 0 ]; then
-    echo "AVISO: Falha ao remover o diretório temporário $TEMP_DIR. Pode ser necessário limpar manualmente."
-fi
+rm -rf "$TEMP_DIR" || echo "AVISO: Falha ao remover o diretório temporário $TEMP_DIR. Pode ser necessário limpar manualmente."
 
 echo "--- Instalação do TeamViewer concluída! ---"
 echo "Data e Hora de término: $(date)"
