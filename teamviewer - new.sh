@@ -37,6 +37,16 @@ echo "Host: $(hostname)"
 echo "Usuário de execução (quem executa o script): $(whoami)"
 echo "ID do Usuário de execução: $(id -u)"
 
+# NOVO: Tentar corrigir o dpkg primeiro se estiver em estado "quebrado"
+echo "INFO: Tentando corrigir o estado do dpkg..."
+sudo /usr/bin/dpkg --configure -a
+if [ $? -ne 0 ]; then
+    echo "AVISO: O comando 'dpkg --configure -a' retornou um erro. Isso pode indicar um problema persistente no sistema de pacotes."
+    # Não vamos sair aqui, pois talvez as próximas etapas de apt consigam corrigir
+fi
+echo "INFO: Tentativa de correção do dpkg concluída."
+
+
 # 1. Criar e navegar para o diretório temporário
 echo "INFO: Criando diretório temporário: $TEMP_DIR"
 mkdir -p "$TEMP_DIR"
