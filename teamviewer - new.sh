@@ -7,10 +7,6 @@ TEAMVIEWER_DEB_URL="https://download.teamviewer.com/download/linux/teamviewer_am
 TEAMVIEWER_DEB_FILENAME="teamviewer_amd64.deb"
 TEMP_DIR="/tmp/teamviewer_installer"
 
-# As variáveis de token e grupo foram removidas, pois a funcionalidade de atribuição será manual.
-# No entanto, se você quiser manter as variáveis no script (mesmo que não sejam usadas), pode deixá-las.
-# Por clareza, estou removendo-as, mas se precisar delas para documentação, avise.
-
 # --- ADVERTÊNCIA CRÍTICA E FUNDAMENTAL (MANTIDA) ---
 # ESTE SCRIPT NÃO RESOLVERÁ O ERRO "Remote script execution requires user consent".
 # O erro ocorre ANTES que este script sequer comece a rodar.
@@ -35,15 +31,18 @@ echo "INFO: Tentativa de correção do dpkg concluída."
 
 # 1. Criar e navegar para o diretório temporário
 echo "INFO: Criando diretório temporário: $TEMP_DIR"
-mkdir -p "$TEMP_DIR" || { echo "ERRO: Não foi possível criar o diretório temporário $TEMP_DIR. Verifique as permissões."; exit 1; }
+# Usamos sudo aqui para garantir que o diretório seja criado com permissões adequadas
+sudo mkdir -p "$TEMP_DIR" || { echo "ERRO: Não foi possível criar o diretório temporário $TEMP_DIR. Verifique as permissões."; exit 1; }
+sudo chmod 777 "$TEMP_DIR" # Garante que todos possam escrever, mesmo que rode como user não-root
 cd "$TEMP_DIR" || { echo "ERRO: Não foi possível mudar para o diretório $TEMP_DIR. Saindo."; exit 1; }
 echo "INFO: Diretório temporário criado e navegado com sucesso."
 
 # 2. Baixar o pacote TeamViewer .deb
 echo "INFO: Baixando o pacote TeamViewer de: $TEAMVIEWER_DEB_URL"
-wget -q "$TEAMVIEWER_DEB_URL" -O "$TEAMVIEWER_DEB_FILENAME" || { echo "ERRO: Falha ao baixar o pacote TeamViewer. Verifique a URL e a conexão com a internet."; rm -rf "$TEMP_DIR"; exit 1; }
+# NOVO: Adicionar 'sudo' para o wget garantir permissão de escrita no diretório
+sudo wget -q "$TEAMVIEWER_DEB_URL" -O "$TEAMVIEWER_DEB_FILENAME" || { echo "ERRO: Falha ao baixar o pacote TeamViewer. Verifique a URL e a conexão com a internet."; rm -rf "$TEMP_DIR"; exit 1; }
 echo "INFO: Download do pacote TeamViewer concluído."
-ls -lh "$TEAMVIEWER_DEB_FILENAME"
+ls -lh "$TEAMVIEWER_DEB_FILENAME" # Este ls pode falhar se o sudo wget criar o arquivo com root e o user tnd_admin não tiver lido, mas o wget em si já passou.
 
 # 3. Atualizar lista de pacotes e instalar dependências antes de instalar o .deb
 echo "INFO: Atualizando a lista de pacotes e instalando dependências necessárias..."
@@ -78,7 +77,7 @@ sudo /usr/bin/systemctl stop teamviewerd || true # Permite que falhe se não est
 sleep 3 # Pequena pausa antes de iniciar
 sudo /usr/bin/systemctl start teamviewerd
 
-# Loop de espera mais agressivo para o daemon TeamViewer estar realmente pronto
+# Loop de espera para o daemon TeamViewer estar realmente pronto
 MAX_RETRIES=20 # Tentar 20 vezes (total de 100 segundos)
 WAIT_TIME=5    # Esperar 5 segundos entre as tentativas
 RETRY_COUNT=0
@@ -101,12 +100,10 @@ else
     rm -rf "$TEMP_DIR"; exit 1 # Sair com erro se o daemon não estiver pronto para configuração
 fi
 
-# As seções 6 e 7 (Configuração da Política e Atribuição) foram removidas daqui.
-# Elas precisarão ser configuradas manualmente no dispositivo após a instalação.
-
 # 8. Limpar arquivos temporários
+# Ajustar a limpeza para usar sudo, já que os arquivos serão criados por root
 echo "INFO: Limpando arquivos temporários em $TEMP_DIR..."
-rm -rf "$TEMP_DIR" || echo "AVISO: Falha ao remover o diretório temporário $TEMP_DIR. Pode ser necessário limpar manualmente."
+sudo rm -rf "$TEMP_DIR" || echo "AVISO: Falha ao remover o diretório temporário $TEMP_DIR. Pode ser necessário limpar manualmente."
 
 echo "--- Instalação do TeamViewer concluída! ---"
 echo "Data e Hora de término: $(date)"
