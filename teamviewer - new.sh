@@ -6,6 +6,8 @@ set -x  # Imprimir comandos e argumentos à medida que são executados (útil pa
 TEAMVIEWER_DEB_URL="https://download.teamviewer.com/download/linux/teamviewer_amd64.deb"
 TEAMVIEWER_DEB_FILENAME="teamviewer_amd64.deb"
 TEMP_DIR="/tmp/teamviewer_installer"
+
+# Substitua "SEU_TOKEN_DE_ATRIBUICAO_AQUI" pelo seu token real do TeamViewer Management Console.
 TEAMVIEWER_ASSIGNMENT_TOKEN="SEU_TOKEN_DE_ATRIBUICAO_AQUI" # <<<<< PREENCHA AQUI SEU TOKEN REAL
 DEVICE_ALIAS=$(hostname)
 TEAMVIEWER_GROUP="ManagedByIntune" # <<<<< PREENCHA AQUI O NOME DO GRUPO NO TEAMVIEWER (ou use um padrão)
@@ -19,6 +21,7 @@ TEAMVIEWER_GROUP="ManagedByIntune" # <<<<< PREENCHA AQUI O NOME DO GRUPO NO TEAM
 # NENHUM comando dentro do script (wget, dpkg, sudo, etc.) pode contornar essa exigência PRÉ-EXECUÇÃO.
 # A única solução provável é através do suporte da Microsoft.
 # --- FIM DA ADVERTÊNCIA CRÍTICA ---
+
 
 echo "--- Iniciando a instalação automatizada do TeamViewer no Ubuntu (wget + dpkg) ---"
 echo "Data e Hora de início: $(date)"
@@ -69,26 +72,32 @@ echo "INFO: Instalação do TeamViewer e resolução de dependências concluída
 echo "INFO: Verificando e iniciando o serviço TeamViewer..."
 sudo /usr/bin/systemctl daemon-reload
 sudo /usr/bin/systemctl enable teamviewerd
+
+# NOVO: Parar e iniciar o daemon para garantir um estado limpo
+echo "INFO: Reiniciando o daemon do TeamViewer para garantir um estado limpo..."
+sudo /usr/bin/systemctl stop teamviewerd || true # Permite que falhe se não estiver rodando
+sleep 2 # Pequena pausa antes de iniciar
 sudo /usr/bin/systemctl start teamviewerd
 
-# NOVO: Loop de espera para o daemon TeamViewer estar realmente pronto
-MAX_RETRIES=10 # Tentar 10 vezes
+# NOVO: Loop de espera mais agressivo para o daemon TeamViewer estar realmente pronto
+MAX_RETRIES=20 # Tentar 20 vezes (total de 100 segundos)
 WAIT_TIME=5    # Esperar 5 segundos entre as tentativas
 RETRY_COUNT=0
 SERVICE_READY=false
 
 while [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
     echo "INFO: Verificando se o daemon do TeamViewer está pronto (Tentativa $((RETRY_COUNT+1))/$MAX_RETRIES)..."
-    # O comando 'teamviewer status' é uma boa forma de verificar se o daemon está responsivo
-    sudo /usr/bin/teamviewer status | grep -q "TeamViewer daemon is running." && SERVICE_READY=true && break
+    # Tenta um comando que realmente precisa do daemon rodando para responder
+    # 'teamviewer info' é mais robusto que 'teamviewer status' para verificar responsividade
+    sudo /usr/bin/teamviewer info 2>&1 | grep -q "TeamViewer ID:" && SERVICE_READY=true && break
     sleep "$WAIT_TIME"
     RETRY_COUNT=$((RETRY_COUNT+1))
 done
 
 if [ "$SERVICE_READY" = true ]; then
-    echo "INFO: Daemon do TeamViewer está pronto e rodando."
+    echo "INFO: Daemon do TeamViewer está pronto e rodando para configuração."
 else
-    echo "ERRO: O daemon do TeamViewer não iniciou ou não respondeu após múltiplas tentativas. Verifique 'sudo systemctl status teamviewerd' manualmente."
+    echo "ERRO: O daemon do TeamViewer não iniciou ou não respondeu após múltiplas tentativas. Verifique 'sudo systemctl status teamviewerd' manualmente e o log completo do TeamViewer."
     sudo /usr/bin/systemctl status teamviewerd # Exibir o status completo para depuração
     rm -rf "$TEMP_DIR"; exit 1 # Sair com erro se o daemon não estiver pronto para configuração
 fi
@@ -96,11 +105,14 @@ fi
 
 # 6. Configurar política de acesso para visualização remota (Full Access)
 echo "INFO: Configurando política de acesso para visualização remota (FullAccess)..."
-sudo /usr/bin/teamviewer setup config default Policy.IncomingConnectionPolicy "FullAccess" || echo "AVISO: Falha ao configurar a política de acesso do TeamViewer. O TeamViewer pode precisar de configuração manual."
-if [ $? -ne 0 ]; then # Verificar explicitamente o status do comando
-    echo "ERRO: O comando de configuração de política do TeamViewer falhou. Saindo."
+# O || true é para evitar que o set -e saia aqui se este comando der erro.
+# Vamos verificar o código de saída explicitamente para dar uma mensagem melhor.
+sudo /usr/bin/teamviewer setup config default Policy.IncomingConnectionPolicy "FullAccess"
+if [ $? -ne 0 ]; then
+    echo "ERRO: O comando de configuração de política do TeamViewer falhou. Pode ser necessário configurar manualmente ou o daemon ainda não está totalmente pronto. Saindo."
     rm -rf "$TEMP_DIR"; exit 1
 fi
+echo "INFO: Política de acesso configurada com sucesso."
 
 
 # 7. Atribuir o TeamViewer à sua conta (usando o token)
@@ -108,7 +120,7 @@ if [ -n "$TEAMVIEWER_ASSIGNMENT_TOKEN" ] && [ "$TEAMVIEWER_ASSIGNMENT_TOKEN" != 
     echo "INFO: Atribuindo o TeamViewer à sua conta usando o token..."
     sudo /usr/bin/teamviewer setup assign --alias "$DEVICE_ALIAS" --group "$TEAMVIEWER_GROUP" --grant-easy-access --token "$TEAMVIEWER_ASSIGNMENT_TOKEN"
     if [ $? -ne 0 ]; then
-        echo "AVISO: Falha ao atribuir o TeamViewer. Verifique o token e os nomes de grupo/alias no TeamViewer Management Console."
+        echo "AVISO: Falha ao atribuir o TeamViewer. Verifique o token, os nomes de grupo/alias no TeamViewer Management Console e as configurações de licença."
         # Não sair aqui, pois a instalação base já foi bem-sucedida, apenas a atribuição falhou.
     else
         echo "INFO: TeamViewer atribuído com sucesso à sua conta."
